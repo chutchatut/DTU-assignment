@@ -59,7 +59,7 @@ int main()
     std::string input;
     std::cin >> input;
 
-    std::unordered_map<kmer_key_t, int> count_maps[NUM_THREAD];
+    count_map_t count_maps[NUM_THREAD];
     message_queue_t message_queues[NUM_THREAD];
     std::thread threads[NUM_THREAD];
 
