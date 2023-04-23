@@ -3,134 +3,53 @@
 #include <bitset>
 #include <unordered_map>
 #include <string>
-#include <cmath>
 #include <vector>
-#include <random>
+#include <thread>
+
+#include "bloom_filter.h"
+#include "thread_message.h"
+#include "kmer_utils.h"
+
+#include <boost/lockfree/spsc_queue.hpp>
 
 #define K 16
+#define NUM_THREAD 16
 
-std::random_device rd;
-std::default_random_engine generator(rd());
-std::uniform_int_distribution<unsigned long long> distribution(0, 0xFFFFFFFFFFFFFFFF);
+typedef std::bitset<2 * K> kmer_key_t;
+typedef std::unordered_map<kmer_key_t, int> count_map_t;
+typedef boost::lockfree::spsc_queue<ThreadMessage<kmer_key_t>, boost::lockfree::capacity<1024>> message_queue_t;
 
-unsigned long int murmur3_64(unsigned long int x)
+void thread_fn(count_map_t &count_map, message_queue_t &message_queue, size_t expected_size)
 {
-    x = (x ^ (x >> 33)) * 0xff51afd7ed558ccdL;
-    x = (x ^ (x >> 23)) * 0xc4ceb9fe1a85ec53L;
-    x = x ^ (x >> 33);
-    return x;
-}
-
-std::hash<std::bitset<2 * K>> bitset_hash_fn;
-
-class BloomFilter
-{
-public:
-    int m; // -n*ln(p) / (ln(2)^2), number of bits
-    int k; // m/n * ln(2), number of hash functions
-    std::vector<bool> vec;
-    std::vector<unsigned long long> seeds;
-    BloomFilter(long int n, // number of expected inserts
-                double p)   // probability of false negative
+    BloomFilter first = BloomFilter<kmer_key_t>(expected_size, 0.1);
+    BloomFilter dup = BloomFilter<kmer_key_t>(expected_size, 0.1);
+    ThreadMessage<kmer_key_t> thread_message{terminate, std::nullopt};
+    kmer_key_t kmer_key;
+    while (1)
     {
-        m = -n * log(p) / (log(2) * log(2));
-        k = m / n * log(2);
-        vec.resize(m);
-        for (uint i = 0; i < k; ++i)
-            seeds.push_back(distribution(generator));
-    }
+        if (!message_queue.pop(thread_message))
+            continue;
 
-    void add(std::bitset<2 * K> key)
-    {
-        for (unsigned long long seed : seeds)
+        switch (thread_message.message_type)
         {
-            unsigned long long hash = murmur3_64(seed ^ key.to_ullong());
-            vec[hash % m] = true;
-        }
-    }
-
-    bool contains(std::bitset<2 * K> key)
-    {
-        for (unsigned long long seed : seeds)
-        {
-            unsigned long long hash = murmur3_64(seed ^ key.to_ullong());
-            if (!vec[hash % m])
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-};
-
-std::bitset<2 * K>
-update_key(const std::bitset<2 * K> &current_key, char next_symbol)
-{
-    std::bitset<2 *K> new_key = current_key << 2;
-    // Switch should be a bit faster than if-else
-    switch (next_symbol)
-    {
-    case 'A':
-        new_key |= 0;
-        break;
-    case 'C':
-        new_key |= 1;
-        break;
-    case 'G':
-        new_key |= 2;
-        break;
-    case 'T':
-        new_key |= 3;
-        break;
-    default:
-        throw std::invalid_argument("Invalid input symbol, only allow symbol are A, C, G, T");
-    }
-    return new_key;
-}
-
-BloomFilter get_duplicate_predicate(std::string input)
-{
-    // Return bloomfilter containing duplicate entries
-    BloomFilter first = BloomFilter(input.size(), 0.05);
-    BloomFilter dup = BloomFilter(input.size(), 0.05);
-    std::bitset<2 * K> current_key;
-
-    for (int i = 0; i < input.size(); i++)
-    {
-        current_key = update_key(current_key, input[i]);
-        if (i >= K - 1)
-        {
-            if (first.contains(current_key))
-                dup.add(current_key);
-            first.add(current_key);
-        }
-    }
-
-    return dup;
-}
-
-std::string bitset_to_ATCG(const std::bitset<2 * K> &key)
-{
-    std::string s;
-    for (int i = key.size() - 1; i > 0; i -= 2)
-    {
-        switch (2 * key[i] + key[i - 1])
-        {
-        case 0:
-            s.push_back('A');
+        case terminate:
+            for (const auto &[key, value] : count_map)
+                if (value < 2)
+                    count_map.erase(key);
+            return;
+        case populate_filter:
+            kmer_key = thread_message.value();
+            if (first.contains(kmer_key))
+                dup.add(kmer_key);
+            first.add(kmer_key);
             break;
-        case 1:
-            s.push_back('C');
-            break;
-        case 2:
-            s.push_back('G');
-            break;
-        case 3:
-            s.push_back('T');
+        case populate_count:
+            kmer_key = thread_message.value();
+            if (dup.contains(kmer_key))
+                count_map[kmer_key]++;
             break;
         }
     }
-    return s;
 }
 
 int main()
@@ -139,25 +58,45 @@ int main()
     // Pack ACGT sequence into bitset and use as a key
     std::string input;
     std::cin >> input;
-    // Use bloomfilter to only push duplicate strings into count map (may have some FP)
-    BloomFilter duplicate_predicate = get_duplicate_predicate(input);
 
-    std::unordered_map<std::bitset<2 * K>, int> count_map;
-    std::bitset<2 * K> current_key;
+    std::unordered_map<kmer_key_t, int> count_maps[NUM_THREAD];
+    message_queue_t message_queues[NUM_THREAD];
+    std::thread threads[NUM_THREAD];
 
+    for (int i = 0; i < NUM_THREAD; ++i)
+        threads[i] = std::thread(thread_fn, std::ref(count_maps[i]), std::ref(message_queues[i]), input.size() / NUM_THREAD);
+
+    kmer_key_t current_key;
     for (int i = 0; i < input.size(); i++)
     {
-        current_key = update_key(current_key, input[i]);
+        update_key(current_key, input[i]);
         if (i >= K - 1)
         {
-            if (duplicate_predicate.contains(current_key))
-                count_map[current_key]++;
+            int thread = current_key.to_ullong() % NUM_THREAD;
+            while (!message_queues[thread].push(ThreadMessage(populate_filter, std::make_optional(current_key))))
+                ;
         }
     }
 
-    for (const auto &[key, value] : count_map)
+    for (int i = 0; i < input.size(); i++)
     {
-        if (value > 1) // Filter out FP
-            std::cout << bitset_to_ATCG(key) << ' ' << value << '\n';
+        update_key(current_key, input[i]);
+        if (i >= K - 1)
+        {
+            int thread = current_key.to_ullong() % NUM_THREAD;
+            while (!message_queues[thread].push(ThreadMessage(populate_count, std::make_optional(current_key))))
+                ;
+        }
     }
+
+    for (auto &message_queue : message_queues)
+        while (!message_queue.push(ThreadMessage<kmer_key_t>(terminate, std::nullopt)))
+            ;
+
+    for (auto &thread : threads)
+        thread.join();
+
+    for (const auto &count_map : count_maps)
+        for (const auto &[key, value] : count_map)
+            std::cout << bitset_to_ATCG(key) << ' ' << value << '\n';
 }
