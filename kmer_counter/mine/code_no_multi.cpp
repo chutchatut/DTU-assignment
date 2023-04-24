@@ -3,16 +3,13 @@
 #include <bitset>
 #include <unordered_map>
 #include <string>
-#include <thread>
 
 #include "bloom_filter.h"
-#include "thread_message.h"
 #include "kmer_utils.h"
 
 #include <boost/lockfree/spsc_queue.hpp>
 
 #define K 16
-#define NUM_THREAD 16
 
 typedef std::bitset<2 * K> kmer_key_t;
 typedef std::unordered_map<kmer_key_t, int> count_map_t;
