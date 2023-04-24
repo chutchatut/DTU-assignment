@@ -3,7 +3,6 @@
 #include <bitset>
 #include <unordered_map>
 #include <string>
-#include <vector>
 #include <thread>
 
 #include "bloom_filter.h"
@@ -26,8 +25,7 @@ int main()
     std::cin >> input;
 
     count_map_t count_map;
-    BloomFilter first = BloomFilter<kmer_key_t>(input.size(), 0.1);
-    BloomFilter dup = BloomFilter<kmer_key_t>(input.size(), 0.1);
+    MultilevelBloomFilter<kmer_key_t> bloom_filter(input.size(), 0.3, 2);
 
     kmer_key_t current_key;
     for (int i = 0; i < input.size(); i++)
@@ -35,9 +33,7 @@ int main()
         update_key(current_key, input[i]);
         if (i >= K - 1)
         {
-            if (first.contains(current_key))
-                dup.add(current_key);
-            first.add(current_key);
+            bloom_filter.add(current_key);
         }
     }
 
@@ -46,7 +42,7 @@ int main()
         update_key(current_key, input[i]);
         if (i >= K - 1)
         {
-            if (dup.contains(current_key))
+            if (bloom_filter.contains(current_key))
                 count_map[current_key]++;
         }
     }

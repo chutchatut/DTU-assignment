@@ -21,8 +21,7 @@ typedef boost::lockfree::spsc_queue<ThreadMessage<kmer_key_t>, boost::lockfree::
 
 void thread_fn(count_map_t &count_map, message_queue_t &message_queue, size_t expected_size)
 {
-    BloomFilter first = BloomFilter<kmer_key_t>(expected_size, 0.1);
-    BloomFilter dup = BloomFilter<kmer_key_t>(expected_size, 0.1);
+    MultilevelBloomFilter<kmer_key_t> bloom_filter(expected_size, 0.3, 2);
     ThreadMessage<kmer_key_t> thread_message{terminate, std::nullopt};
     kmer_key_t kmer_key;
     while (1)
@@ -39,13 +38,11 @@ void thread_fn(count_map_t &count_map, message_queue_t &message_queue, size_t ex
             return;
         case populate_filter:
             kmer_key = thread_message.value();
-            if (first.contains(kmer_key))
-                dup.add(kmer_key);
-            first.add(kmer_key);
+            bloom_filter.add(kmer_key);
             break;
         case populate_count:
             kmer_key = thread_message.value();
-            if (dup.contains(kmer_key))
+            if (bloom_filter.contains(kmer_key))
                 count_map[kmer_key]++;
             break;
         }
