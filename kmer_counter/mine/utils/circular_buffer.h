@@ -8,7 +8,7 @@ private:
     usize_t write_head;
 
 public:
-    Kmer() : write_head(0){};
+    CircularBuffer() : write_head(0){};
 
     void insert(char c)
     {
