@@ -19,7 +19,7 @@ private:
     {
         if (prefix_to_writer.find(prefix) == prefix_to_writer.end())
         {
-            std::ofstream file_writer(prefix);
+            std::ofstream file_writer(basepath / prefix);
             prefix_to_writer[prefix] = file_writer;
         }
         return prefix_to_writer[prefix];
