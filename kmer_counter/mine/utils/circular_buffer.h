@@ -19,6 +19,7 @@ public:
     std::string get_string()
     {
         std::string s;
+        s.reserve(k);
         for (int16_t i = 0; i < k; ++i)
             s.push_back(data[(write_head + i) % k]);
         return s;
