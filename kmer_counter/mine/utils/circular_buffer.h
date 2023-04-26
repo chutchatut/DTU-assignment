@@ -1,14 +1,18 @@
 #include <string>
+#include <vector>
 
-template <size_t k>
 class CircularBuffer
 {
 private:
-    char data[k];
-    usize_t write_head;
+    uint16_t k;
+    std::vector<char> data;
+    size_t write_head;
 
 public:
-    CircularBuffer() : write_head(0){};
+    CircularBuffer(uint16_t k) : write_head(0), k(k)
+    {
+        data.resize(k);
+    };
 
     void insert(char c)
     {
