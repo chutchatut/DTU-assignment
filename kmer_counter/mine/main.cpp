@@ -13,7 +13,8 @@
 
 std::vector<std::string> stage_1(uint16_t k, const fs::path &fasta_path, const fs::path &cache_path)
 {
-    // return true if spilled to disk
+    // convert FASTA to cache files
+    // return list of cache files generated
     CircularBuffer buffer(k); // create buffer of length k
     RadixCacheWriter<PREFIX_SIZE> writer(cache_path, "");
 
@@ -31,6 +32,7 @@ std::vector<std::string> stage_1(uint16_t k, const fs::path &fasta_path, const f
 
 void stage_2(uint16_t k, const fs::path &cache_path, std::vector<std::string> &cached_prefixes)
 {
+    // recursively process cache files
     std::stack<std::string> prefixes_stack;
     vector_copy_into_stack(cached_prefixes, prefixes_stack);
 
