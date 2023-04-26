@@ -8,7 +8,7 @@
 #include "utils/cache_writer.h"
 #include "utils/circular_buffer.h"
 
-#define PREFIX_SIZE 4
+#define PREFIX_SIZE 3
 
 bool stage_1(uint16_t k, const fs::path &fasta_path, const fs::path &cache_path)
 {
