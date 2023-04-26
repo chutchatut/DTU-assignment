@@ -48,7 +48,7 @@ void stage_2(uint16_t k, const fs::path &cache_path, std::vector<std::string> &c
             writer.insert(s, count);
 
         input_file.close();
-        // fs::remove(cache_path / new_prefix);
+        fs::remove(cache_path / new_prefix);
 
         vector_copy_into_stack(writer.flush(), prefixes_stack);
     }
