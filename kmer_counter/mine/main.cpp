@@ -7,14 +7,15 @@
 #include "utils/fasta_reader.h"
 #include "utils/cache_writer.h"
 #include "utils/circular_buffer.h"
+#include "utils/helper.h"
 
 #define PREFIX_SIZE 3
 
-bool stage_1(uint16_t k, const fs::path &fasta_path, const fs::path &cache_path)
+std::vector<std::string> stage_1(uint16_t k, const fs::path &fasta_path, const fs::path &cache_path)
 {
     // return true if spilled to disk
     CircularBuffer buffer(k); // create buffer of length k
-    RadixCacheWriter<PREFIX_SIZE> writer(cache_path, cache_path);
+    RadixCacheWriter<PREFIX_SIZE> writer(cache_path, "");
 
     auto read_fn = [&buffer, &writer](const char &c, const bool &is_ready)
     {
@@ -28,24 +29,18 @@ bool stage_1(uint16_t k, const fs::path &fasta_path, const fs::path &cache_path)
     return writer.flush();
 }
 
-void stage_2(uint16_t k, const fs::path &cache_path)
+void stage_2(uint16_t k, const fs::path &cache_path, std::vector<std::string> &cached_prefixes)
 {
-    std::stack<fs::path> directories_to_scan;
-    auto scan_dir = [&directories_to_scan](const fs::path &path_to_scan)
+    std::stack<std::string> prefixes_stack;
+    vector_copy_into_stack(cached_prefixes, prefixes_stack);
+
+    while (!prefixes_stack.empty())
     {
-        for (auto const &dir_entry : std::filesystem::directory_iterator{path_to_scan})
-            directories_to_scan.push(dir_entry);
-    };
+        std::string new_prefix = prefixes_stack.top();
+        prefixes_stack.pop();
+        std::ifstream input_file(cache_path / new_prefix);
 
-    scan_dir(cache_path);
-
-    while (!directories_to_scan.empty())
-    {
-        fs::path new_basedir = directories_to_scan.top();
-        directories_to_scan.pop();
-        std::ifstream input_file(new_basedir / "data");
-
-        RadixCacheWriter<PREFIX_SIZE> writer(new_basedir, cache_path);
+        RadixCacheWriter<PREFIX_SIZE> writer(cache_path, new_prefix);
         std::string s;
         uint16_t count;
 
@@ -53,10 +48,9 @@ void stage_2(uint16_t k, const fs::path &cache_path)
             writer.insert(s, count);
 
         input_file.close();
-        fs::remove(new_basedir / "data");
+        // fs::remove(cache_path / new_prefix);
 
-        if (writer.flush())
-            scan_dir(new_basedir);
+        vector_copy_into_stack(writer.flush(), prefixes_stack);
     }
 }
 
@@ -71,12 +65,9 @@ int main(int argc, char *argv[])
     fs::path fasta_path(argv[2]);
     fs::path cache_path(argv[3]);
 
-    if (stage_1(k, fasta_path, cache_path))
-        stage_2(k, cache_path);
-
-    // clean up
-    // for (const auto &subfolder : std::filesystem::directory_iterator(cache_path))
-    //     std::filesystem::remove_all(subfolder.path());
+    std::vector<std::string> cached_prefixes = stage_1(k, fasta_path, cache_path);
+    if (cached_prefixes.size() > 0)
+        stage_2(k, cache_path, cached_prefixes);
 
     return 0;
 }
