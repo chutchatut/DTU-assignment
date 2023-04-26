@@ -5,7 +5,6 @@
 
 #include "symbols.h"
 
-// TODO increase this
 #define MAX_DICT_CAPACITY 10000
 
 namespace fs = std::filesystem;
@@ -23,8 +22,7 @@ private:
     {
         if (prefix_to_writer.find(prefix) == prefix_to_writer.end())
         {
-            fs::create_directories(basepath / prefix);
-            std::ofstream *file_writer = new std::ofstream(basepath / prefix / "data");
+            std::ofstream *file_writer = new std::ofstream(basepath / (prev_prefix + prefix));
             prefix_to_writer[prefix] = file_writer;
         }
         return prefix_to_writer[prefix];
@@ -40,13 +38,7 @@ private:
     }
 
 public:
-    RadixCacheWriter(const fs::path &basepath, const fs::path &cache_path) : basepath(basepath), spilled_to_disk(false)
-    {
-        fs::path relation = fs::relative(basepath, cache_path);
-        for (const char &c : relation.u8string())
-            if (is_symbol_valid(c))
-                prev_prefix.push_back(c);
-    };
+    RadixCacheWriter(const fs::path &basepath, const std::string &prev_prefix) : basepath(basepath), prev_prefix(prev_prefix), spilled_to_disk(false){};
 
     void insert(const std::string &s, uint16_t count)
     {
@@ -59,20 +51,22 @@ public:
             write_to_disk(s, count);
     }
 
-    bool flush()
+    std::vector<std::string> flush()
     {
         // Close all files and print k-mer that's already counted
 
-        for (auto &[_, file_writer] : prefix_to_writer)
+        std::vector<std::string> prefixes;
+        for (auto &[prefix, file_writer] : prefix_to_writer)
         {
             file_writer->close();
             delete file_writer;
+            prefixes.push_back(prev_prefix + prefix);
         }
 
         for (const auto &[k, v] : count_map)
             if (v > 1)
                 std::cout << prev_prefix << k << ' ' << v << '\n';
 
-        return spilled_to_disk;
+        return prefixes;
     }
 };
