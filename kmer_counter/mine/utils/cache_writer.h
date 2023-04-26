@@ -6,7 +6,7 @@
 #include "symbols.h"
 
 // TODO increase this
-#define MAX_DICT_CAPACITY 4
+#define MAX_DICT_CAPACITY 10000
 
 namespace fs = std::filesystem;
 template <size_t prefix_length>
