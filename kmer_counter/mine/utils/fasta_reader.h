@@ -23,7 +23,8 @@ void read_fasta(const fs::path &file_path, const std::function<void(const char &
         if (is_reading_dna && is_symbol_valid(c))
         {
             insert_fn(c, i >= k - 1);
-            ++i;
+            if (i < k)
+                ++i;
         }
     }
 }
