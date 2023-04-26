@@ -8,7 +8,7 @@
 #include "utils/cache_writer.h"
 #include "utils/circular_buffer.h"
 
-#define PREFIX_SIZE 10000
+#define PREFIX_SIZE 4
 
 bool stage_1(uint16_t k, const fs::path &fasta_path, const fs::path &cache_path)
 {
@@ -75,8 +75,8 @@ int main(int argc, char *argv[])
         stage_2(k, cache_path);
 
     // clean up
-    for (const auto &subfolder : std::filesystem::directory_iterator(cache_path))
-        std::filesystem::remove_all(subfolder.path());
+    // for (const auto &subfolder : std::filesystem::directory_iterator(cache_path))
+    //     std::filesystem::remove_all(subfolder.path());
 
     return 0;
 }
